@@ -1,0 +1,41 @@
+# ---------------------------------------------------------------------------
+# AI Career Intelligence Platform - backend dependencies
+# Python 3.10+ required (3.11 / 3.12 recommended)
+# ---------------------------------------------------------------------------
+
+# --- Web framework -------------------------------------------------------
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20          # multipart/form-data file uploads
+
+# --- Validation / settings ----------------------------------------------
+pydantic==2.10.4
+pydantic-settings==2.7.0
+
+# --- HTTP client (xAI / Grok calls) -------------------------------------
+httpx==0.27.2
+
+# --- Database ------------------------------------------------------------
+supabase==2.11.0                  # official Supabase Python client
+
+# --- Speech to text ------------------------------------------------------
+# Default backend. CTranslate2 build of Whisper: same models, ~4x faster on CPU
+# and no PyTorch download. Change WHISPER_BACKEND=openai to use the reference
+# implementation instead (then also install the optional block below).
+faster-whisper==1.1.0
+requests==2.32.3                  # required at import time by faster-whisper's model downloader
+
+# --- Media probing -------------------------------------------------------
+python-magic==0.4.27              # libmagic MIME sniffing (see docs for Windows)
+
+# --- Testing -------------------------------------------------------------
+pytest==8.3.4
+pytest-asyncio==0.25.0
+respx==0.21.1                     # httpx mocking for LLM client tests
+
+# ---------------------------------------------------------------------------
+# OPTIONAL: reference OpenAI Whisper backend (WHISPER_BACKEND=openai).
+# Large download (PyTorch ~2 GB). Only install if you specifically need it.
+#
+#   pip install openai-whisper==20240930
+# ---------------------------------------------------------------------------
