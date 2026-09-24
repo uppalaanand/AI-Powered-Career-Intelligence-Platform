@@ -78,7 +78,7 @@ export function useProcessingPipeline() {
         );
         setStage('transcript-check', STAGE_STATE.DONE, 'Text and timestamps verified');
 
-        // ---- 6: Grok analysis ---------------------------------------------
+        // ---- 6: Groq analysis ---------------------------------------------
         if (!runAnalysis) {
           setStage('analyze', STAGE_STATE.SKIPPED, 'Skipped');
           setStage('save', STAGE_STATE.DONE, 'Transcript saved');

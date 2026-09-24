@@ -10,7 +10,9 @@ from typing import Any, Dict
 
 from starlette.concurrency import run_in_threadpool
 
-from app.ai.llm_orchestrator import LLMOrchestrator
+from app.ai.llm_service import LLMService
+from app.repositories.vector_repository import VectorRepository
+from app.services.embedding_service import EmbeddingService
 from app.config import get_settings
 from app.models.media_formats import (
     AUDIO_EXTENSIONS,
@@ -48,15 +50,21 @@ class HealthController:
             )
         if not settings.llm_configured:
             warnings.append(
-                "No AI provider is configured. Set XAI_API_KEY (Grok), GEMINI_API_KEY "
-                "or GROQ_API_KEY in backend/.env."
+                "Groq is not configured, so meeting analysis and Q&A are unavailable. "
+                "Set GROQ_API_KEY in backend/.env."
             )
-        elif not settings.grok_configured:
-            # Not a failure: the chain simply starts at the first key that exists.
-            warnings.append(
-                "Grok is not configured, so analysis starts at "
-                f"{settings.configured_llm_providers[0]}. Set XAI_API_KEY to use it first."
-            )
+        if not settings.knowledge_configured:
+            missing = []
+            if not settings.embeddings_configured:
+                missing.append("the embedding model (pip install -r requirements.txt)")
+            if not settings.vector_db_configured:
+                missing.append("PINECONE_API_KEY")
+            if missing:
+                warnings.append(
+                    "Meeting search and Q&A are unavailable. Set "
+                    + " and ".join(missing)
+                    + " in backend/.env. Everything else works without them."
+                )
         if database_reachable is False:
             warnings.append(
                 "Supabase is configured but unreachable, or the tables are missing. "
@@ -70,13 +78,14 @@ class HealthController:
             ffmpeg_available=ffmpeg_available,
             whisper_backend=settings.whisper_backend,
             whisper_model=settings.whisper_model,
-            grok_configured=settings.grok_configured,
-            gemini_configured=settings.gemini_configured,
             groq_configured=settings.groq_configured,
             llm_configured=settings.llm_configured,
-            llm_provider_chain=settings.configured_llm_providers,
+            llm_model=settings.groq_model,
             supabase_configured=settings.supabase_configured,
             database_reachable=database_reachable,
+            embeddings_configured=settings.embeddings_configured,
+            vector_store_configured=settings.vector_db_configured,
+            knowledge_search_ready=settings.knowledge_configured,
             warnings=warnings,
         )
 
@@ -88,8 +97,28 @@ class HealthController:
             max_upload_size_mb=self._settings.max_upload_size_mb,
         )
 
-    async def check_llm(self, *, check_all: bool = False) -> Dict[str, Any]:
-        return await LLMOrchestrator().check_connection(check_all=check_all)
+    async def check_llm(self) -> Dict[str, Any]:
+        return await LLMService().check_connection()
+
+    async def check_vector_store(self) -> Dict[str, Any]:
+        """Milestone 3 connectivity: the embedding model and the vector index.
+
+        Operator-triggered only. The embedding probe costs one tiny request;
+        the Pinecone probe is a stats call that costs no quota at all.
+        """
+        embeddings = await EmbeddingService().check_connection()
+        vectors = await VectorRepository().check_connection()
+        ready = bool(embeddings.get("reachable")) and bool(vectors.get("reachable"))
+        return {
+            "ready": ready,
+            "embeddings": embeddings,
+            "vector_store": vectors,
+            "message": (
+                "Meeting search is ready."
+                if ready
+                else "Meeting search is not ready yet. See the details below."
+            ),
+        }
 
     async def check_database(self) -> Dict[str, Any]:
         settings = self._settings

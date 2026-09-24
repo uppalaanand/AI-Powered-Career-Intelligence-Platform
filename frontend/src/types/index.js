@@ -85,7 +85,8 @@
  * @property {Participant[]} participants
  * @property {ActionItem[]} action_items
  * @property {string|null} model
- * @property {'grok'|'gemini'|'groq'|null} provider  Which AI provider answered.
+ * @property {string|null} provider  LLM provider that produced it: 'groq' (older records
+ *   may name a provider used before the Groq-only change).
  * @property {number} chunk_count
  */
 

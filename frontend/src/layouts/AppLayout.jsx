@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink, Outlet, Link } from 'react-router-dom';
-import { AudioLines, LayoutDashboard, ListVideo, Menu, Upload } from 'lucide-react';
+import { AudioLines, LayoutDashboard, ListVideo, Menu, Sparkles, Upload } from 'lucide-react';
 import { Badge } from '../components/ui';
 import { useSystemHealth } from '../hooks/useSystemHealth';
 
@@ -8,6 +8,7 @@ const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/upload', label: 'Upload meeting', icon: Upload },
   { to: '/meetings', label: 'Meetings', icon: ListVideo },
+  { to: '/ask', label: 'Ask & search', icon: Sparkles },
 ];
 
 export function AppLayout() {
@@ -45,7 +46,7 @@ export function AppLayout() {
               Whisper {health.whisper_model} &middot; {health.whisper_backend}
             </div>
           )}
-          <div>Milestone 1 + 2</div>
+          <div>Milestone 1 + 2 + 3</div>
         </div>
       </aside>
 
@@ -97,10 +98,8 @@ function ServiceStatus({ health, offline }) {
   const missing = [];
   if (!health.ffmpeg_available) missing.push('FFmpeg');
   if (!health.supabase_configured) missing.push('Supabase');
-  // `llm_configured` covers the whole Grok -> Gemini -> Groq chain. Older
-  // backends only reported `grok_configured`, so fall back to it.
-  const aiConfigured = health.llm_configured ?? health.grok_configured;
-  if (!aiConfigured) missing.push('AI provider');
+  // Groq is the only LLM provider, so `llm_configured` means "Groq has a key".
+  if (!health.llm_configured) missing.push('Groq');
 
   if (!missing.length) {
     return (

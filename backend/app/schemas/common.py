@@ -34,14 +34,17 @@ class HealthResponse(BaseModel):
     ffmpeg_available: bool
     whisper_backend: str
     whisper_model: str
-    grok_configured: bool
-    gemini_configured: bool = False
     groq_configured: bool = False
-    llm_configured: bool = False
-    llm_provider_chain: list[str] = Field(
-        default_factory=list,
-        description="Configured AI providers in fallback order, e.g. ['grok', 'gemini'].",
+    llm_configured: bool = Field(
+        False, description="True when Groq, the only LLM provider, has an API key."
     )
+    llm_provider: str = "groq"
+    llm_model: Optional[str] = None
     supabase_configured: bool
     database_reachable: Optional[bool] = None
+    embeddings_configured: bool = False
+    vector_store_configured: bool = False
+    knowledge_search_ready: bool = Field(
+        False, description="True when semantic search and Q&A can run (Milestone 3).",
+    )
     warnings: list[str] = Field(default_factory=list)

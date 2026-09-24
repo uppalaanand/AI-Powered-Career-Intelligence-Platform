@@ -25,9 +25,25 @@ const FRIENDLY_MESSAGES = {
   INTELLIGENCE_NOT_FOUND: 'This meeting has not been analysed yet.',
   MEETING_NOT_FOUND: 'That meeting no longer exists.',
   MEDIA_UNAVAILABLE: 'The recording is no longer on the server. Upload it again to transcribe it.',
-  LLM_NOT_CONFIGURED: 'The Grok API key is not set on the server, so analysis is unavailable.',
-  LLM_RATE_LIMITED: 'Grok is rate limiting requests. Wait a moment and try again.',
+  LLM_NOT_CONFIGURED: 'Groq is not configured on the server (GROQ_API_KEY), so analysis is unavailable.',
+  LLM_RATE_LIMITED: 'Groq is rate limiting requests. Wait a moment and try again.',
+  LLM_REQUEST_TOO_LARGE: 'This meeting is too large for the Groq plan in one request. Try again or lower LLM_CHUNK_CHAR_SIZE.',
   LLM_INVALID_RESPONSE: 'The AI returned an unusable response. Try running the analysis again.',
+  EMBEDDING_NOT_CONFIGURED:
+    'The embedding model is not available on the server. Install the backend requirements.',
+  EMBEDDING_MODEL_UNAVAILABLE:
+    'The embedding model could not be loaded. On first use the server must download it.',
+  EMBEDDING_FAILED: 'The embedding service could not be reached. Try again in a moment.',
+  EMBEDDING_RATE_LIMITED: 'The embedding service is rate limiting requests. Try again shortly.',
+  VECTOR_STORE_NOT_CONFIGURED:
+    'The meeting search index is not set up on the server. Add PINECONE_API_KEY in backend/.env.',
+  VECTOR_STORE_ERROR: 'The meeting search index could not be reached. Please try again.',
+  VECTOR_INDEX_MISSING: 'The meeting search index does not exist yet. Index your meetings first.',
+  VECTOR_DIMENSION_MISMATCH:
+    'The embedding model and the search index disagree on vector size. Check the backend settings.',
+  SEARCH_UNAVAILABLE: 'Unable to search meeting knowledge at the moment. Please try again.',
+  MEETING_NOT_INDEXABLE: 'This meeting has nothing to index yet. Transcribe and analyse it first.',
+  INVALID_QUERY: 'Enter a question or some search terms.',
   DATABASE_NOT_CONFIGURED: 'Supabase is not configured on the server, so nothing can be saved.',
   DATABASE_TABLE_MISSING: 'The database tables are missing. Run backend/database/schema.sql in Supabase.',
   DATABASE_ERROR: 'The database could not be reached.',

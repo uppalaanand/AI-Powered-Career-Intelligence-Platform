@@ -1,10 +1,10 @@
 """Meeting intelligence orchestration.
 
-    stored transcript -> LLMOrchestrator (Grok -> Gemini -> Groq) -> validated JSON
+    stored transcript -> LLMService -> Groq -> validated JSON
     -> participant mapping -> Supabase -> API response
 
-Provider choice and fallback belong to the orchestrator; this service only asks
-for meeting intelligence and records which provider supplied it. The LLM never
+All LLM work goes through LLMService, whose only provider is Groq; this service
+only asks for meeting intelligence and records the model that produced it. The LLM never
 writes to the database directly: its output is validated, then participant names
 are normalised and action items are linked to those canonical names, and only
 then is anything stored.
@@ -19,8 +19,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from app.ai.llm_orchestrator import LLMOrchestrator
-from app.config import get_logger
+from typing import TYPE_CHECKING
+
+from app.ai.llm_service import LLMService
+from app.config import get_logger, get_settings
 from app.models.enums import ActionItemStatus, ProcessingStatus, Priority
 from app.repositories.intelligence_repository import IntelligenceRepository
 from app.repositories.meeting_repository import MeetingRepository
@@ -35,21 +37,26 @@ from app.services.participant_service import ParticipantService
 from app.utils.errors import AppError, IntelligenceNotFoundError, TranscriptNotFoundError
 from app.utils.text import truncate
 
+if TYPE_CHECKING:  # pragma: no cover - import cycle avoidance only
+    from app.services.knowledge_index_service import KnowledgeIndexService
+
 logger = get_logger(__name__)
 
 
 class IntelligenceService:
     def __init__(
         self,
-        llm: Optional[LLMOrchestrator] = None,
+        llm: Optional[LLMService] = None,
         meetings: Optional[MeetingRepository] = None,
         repository: Optional[IntelligenceRepository] = None,
         participants: Optional[ParticipantService] = None,
+        indexer: Optional["KnowledgeIndexService"] = None,
     ) -> None:
-        self._llm = llm or LLMOrchestrator()
+        self._llm = llm or LLMService()
         self._meetings = meetings or MeetingRepository()
         self._repository = repository or IntelligenceRepository()
         self._participants = participants or ParticipantService()
+        self._index_service = indexer
 
     # -------------------------------------------------------------- analyse
     async def analyze(self, meeting_id: str, *, force: bool = False) -> MeetingIntelligence:
@@ -93,6 +100,12 @@ class IntelligenceService:
             self._meetings.set_status(meeting_id, ProcessingStatus.PERSISTING)
             self._repository.replace_intelligence(meeting_id, intelligence)
             self._meetings.set_status(meeting_id, ProcessingStatus.COMPLETED)
+
+            # Milestone 3: make the finished meeting searchable. Deliberately
+            # the last step and deliberately unable to fail the request - the
+            # analysis is already saved, so a vector-store outage must leave a
+            # complete meeting behind, just an unindexed one.
+            await self._index_knowledge(meeting_id)
             return intelligence
 
         except AppError as exc:
@@ -115,8 +128,42 @@ class IntelligenceService:
     def exists(self, meeting_id: str) -> bool:
         return self._repository.has_intelligence(meeting_id)
 
-    async def check_llm(self, *, check_all: bool = False) -> Dict[str, Any]:
-        return await self._llm.check_connection(check_all=check_all)
+    async def check_llm(self) -> Dict[str, Any]:
+        return await self._llm.check_connection()
+
+    async def _index_knowledge(self, meeting_id: str) -> None:
+        """Add the freshly analysed meeting to the search index (best effort).
+
+        Skipped silently when Milestone 3 is not configured, so an installation
+        without Pinecone behaves exactly as it did before.
+        """
+        if not get_settings().knowledge_auto_index:
+            return
+        try:
+            indexer = self._indexer()
+            if not indexer.is_configured:
+                return
+            result = await indexer.index_meeting_safely(meeting_id)
+        except Exception:  # noqa: BLE001 - the analysis is already saved; never undo it
+            logger.exception("Automatic indexing could not start for meeting %s", meeting_id)
+            return
+        if result.succeeded or result.skipped_unchanged:
+            logger.info("Meeting %s is searchable (%s vectors).",
+                        meeting_id, result.vectors_written)
+        else:
+            logger.warning(
+                "Meeting %s was analysed and saved but could not be indexed for "
+                "search (%s). It can be indexed later from the Ask & search page.",
+                meeting_id, result.error_code,
+            )
+
+    def _indexer(self) -> "KnowledgeIndexService":
+        """Built lazily so importing this module never constructs an HTTP client."""
+        if self._index_service is None:
+            from app.services.knowledge_index_service import KnowledgeIndexService
+
+            self._index_service = KnowledgeIndexService()
+        return self._index_service
 
     def _fail(self, meeting_id: str, code: str, message: str) -> None:
         try:

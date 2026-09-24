@@ -152,10 +152,7 @@ class ConflictError(AppError):
 class LLMNotConfiguredError(AppError):
     status_code = 503
     code = "LLM_NOT_CONFIGURED"
-    message = (
-        "No AI provider is configured on the server. Set at least one of "
-        "XAI_API_KEY, GEMINI_API_KEY or GROQ_API_KEY in backend/.env."
-    )
+    message = "Groq is not configured on the server. Set GROQ_API_KEY in backend/.env."
 
 
 class LLMRequestError(AppError):
@@ -176,18 +173,65 @@ class LLMInvalidResponseError(AppError):
     message = "The AI returned a response that did not match the expected format."
 
 
-class LLMAllProvidersFailedError(AppError):
-    """Every configured provider was tried, in order, and none produced a
-    valid result. Raised by the orchestrator so the user sees one clear
-    message instead of whichever vendor happened to fail last."""
-
-    status_code = 502
-    code = "LLM_ALL_PROVIDERS_FAILED"
+# ------------------------------------------- knowledge / vector search (M3)
+class EmbeddingNotConfiguredError(AppError):
+    status_code = 503
+    code = "EMBEDDING_NOT_CONFIGURED"
     message = (
-        "AI analysis could not be completed at this time. We attempted the "
-        "configured AI providers, but none returned a valid response. "
-        "Please check your API configuration or try again later."
+        "The local embedding model is not available on the server. Install the "
+        "backend requirements (pip install -r requirements.txt) and check "
+        "EMBEDDING_PROVIDER / EMBEDDING_MODEL in backend/.env."
     )
+
+
+class EmbeddingRequestError(AppError):
+    status_code = 502
+    code = "EMBEDDING_FAILED"
+    message = "The embedding service could not be reached. Try again in a moment."
+
+
+class VectorStoreNotConfiguredError(AppError):
+    status_code = 503
+    code = "VECTOR_STORE_NOT_CONFIGURED"
+    message = (
+        "The vector database is not configured on the server. "
+        "Set PINECONE_API_KEY and PINECONE_INDEX_NAME in backend/.env."
+    )
+
+
+class VectorStoreError(AppError):
+    status_code = 502
+    code = "VECTOR_STORE_ERROR"
+    message = "The meeting search index could not be reached. Please try again."
+
+
+class VectorDimensionMismatchError(AppError):
+    status_code = 500
+    code = "VECTOR_DIMENSION_MISMATCH"
+    message = (
+        "The embedding size does not match the vector index. Check EMBEDDING_MODEL "
+        "and the dimension of the Pinecone index."
+    )
+
+
+class SearchUnavailableError(AppError):
+    status_code = 503
+    code = "SEARCH_UNAVAILABLE"
+    message = "Unable to search meeting knowledge at the moment. Please try again."
+
+
+class MeetingNotIndexableError(AppError):
+    status_code = 422
+    code = "MEETING_NOT_INDEXABLE"
+    message = (
+        "This meeting has nothing to index yet. Transcribe and analyse it first."
+    )
+
+
+class InvalidQueryError(AppError):
+    status_code = 422
+    code = "INVALID_QUERY"
+    message = "Enter a question or some search terms."
 
 
 # ---------------------------------------------------------------- database

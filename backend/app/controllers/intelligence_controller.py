@@ -22,5 +22,5 @@ class IntelligenceController:
         intelligence = await run_in_threadpool(self._service.get, meeting_id)
         return IntelligenceResponse(meeting_id=meeting_id, intelligence=intelligence)
 
-    async def check_llm(self, check_all: bool = False) -> Dict[str, Any]:
-        return await self._service.check_llm(check_all=check_all)
+    async def check_llm(self) -> Dict[str, Any]:
+        return await self._service.check_llm()

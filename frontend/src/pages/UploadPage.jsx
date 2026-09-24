@@ -79,12 +79,10 @@ export function UploadPage() {
           </Alert>
         )}
 
-        {health && !(health.llm_configured ?? health.grok_configured) && (
-          <Alert tone="warn" title="No AI provider is configured">
-            Transcription still works, but the summary and action items need at least one of{' '}
-            <code>XAI_API_KEY</code>, <code>GEMINI_API_KEY</code> or <code>GROQ_API_KEY</code> in{' '}
-            <code>backend/.env</code>. They are tried in that order, and the first one that
-            answers is used.
+        {health && !health.llm_configured && (
+          <Alert tone="warn" title="Groq is not configured">
+            Transcription still works, but the summary and action items need{' '}
+            <code>GROQ_API_KEY</code> in <code>backend/.env</code>.
           </Alert>
         )}
 

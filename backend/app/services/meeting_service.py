@@ -250,6 +250,40 @@ class MeetingService:
         self._store.cleanup(meeting_id)
         self._meetings.delete(meeting_id)
 
+    async def delete_with_knowledge(self, meeting_id: str) -> None:
+        """Delete a meeting and the search vectors built from it.
+
+        The database delete happens first: if it fails, nothing has been removed
+        from the index either. If the *vector* cleanup fails afterwards the
+        meeting is still gone, and search already discards matches whose meeting
+        no longer exists - so a stale vector can never resurrect a deleted
+        meeting in the results.
+        """
+        from starlette.concurrency import run_in_threadpool
+
+        await run_in_threadpool(self.delete, meeting_id)
+
+        indexer = self._indexer()
+        if indexer is not None:
+            removed = await indexer.delete_meeting_safely(meeting_id)
+            if removed:
+                logger.info(
+                    "Removed %s search vector(s) for deleted meeting %s",
+                    removed, meeting_id,
+                )
+
+    def _indexer(self):
+        """Knowledge indexer, or None when Milestone 3 is not configured.
+
+        Imported lazily so this module has no import-time dependency on the
+        knowledge layer, and returns None when unconfigured so an installation
+        without Pinecone deletes meetings exactly as it did before.
+        """
+        from app.services.knowledge_index_service import KnowledgeIndexService
+
+        service = KnowledgeIndexService()
+        return service if service.is_configured else None
+
     def rename(self, meeting_id: str, title: str) -> MeetingDetail:
         self._meetings.get_or_404(meeting_id)
         self._meetings.update(meeting_id, {"title": title.strip()})

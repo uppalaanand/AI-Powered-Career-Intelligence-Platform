@@ -18,25 +18,23 @@ def get_controller() -> IntelligenceController:
 
 @router.post(
     "/{meeting_id}/analyze",
-    summary="Analyse a transcript with the AI provider chain",
+    summary="Analyse a transcript with Groq",
     description=(
-        "Sends the stored transcript to the AI provider chain and returns validated "
-        "meeting intelligence: summary, key points, decisions, participants and action "
-        "items with deadlines, priorities and statuses.\n\n"
-        "**Providers are tried in order - Grok (xAI), then Google Gemini, then Groq - "
-        "one at a time, and the first valid response wins.** A provider with no API key "
-        "is skipped without being called, and `intelligence.provider` in the response "
-        "says which one answered.\n\n"
-        "Long transcripts are split into overlapping chunks, analysed in parallel and "
-        "merged. Malformed AI output is retried against the schema and never stored.\n\n"
+        "Sends the stored transcript to **Groq**, the application's only LLM provider, "
+        "and returns validated meeting intelligence: summary, key points, decisions, "
+        "participants and action items with deadlines, priorities and statuses.\n\n"
+        "A normal-length transcript costs **one** Groq request, which returns every field "
+        "at once. Long transcripts are split into overlapping chunks, analysed and "
+        "merged. Malformed AI output is corrected once and otherwise rejected - it is "
+        "never stored.\n\n"
         "An already-analysed meeting is returned from the database untouched, without "
         "calling any provider; pass `force: true` to re-run and replace the previous result."
     ),
     responses={
         404: {"model": ErrorResponse, "description": "Meeting or transcript not found"},
-        429: {"model": ErrorResponse, "description": "Every configured provider is rate limited"},
-        502: {"model": ErrorResponse, "description": "No provider returned a valid response"},
-        503: {"model": ErrorResponse, "description": "No AI provider API key is configured"},
+        429: {"model": ErrorResponse, "description": "Groq rate limit or quota reached"},
+        502: {"model": ErrorResponse, "description": "Groq returned an unusable response"},
+        503: {"model": ErrorResponse, "description": "GROQ_API_KEY is not configured"},
     },
 )
 async def analyze_meeting(

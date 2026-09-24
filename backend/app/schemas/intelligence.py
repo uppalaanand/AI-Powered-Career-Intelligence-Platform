@@ -136,10 +136,10 @@ class KeyPoint(BaseModel):
 
 
 class LLMMeetingIntelligence(BaseModel):
-    """Exactly the JSON shape every provider is asked to return.
+    """Exactly the JSON shape Groq is asked to return.
 
-    Grok, Gemini and Groq all validate against this one model, so nothing
-    downstream can tell which of them answered.
+    Every analysis result - single pass, per chunk, or merged - validates
+    against this one model before anything is stored.
 
     ``extra="ignore"`` keeps an over-eager model from injecting stray keys, while
     every required field is validated. Lists default to empty so an honest "there
@@ -197,7 +197,9 @@ class MeetingIntelligence(BaseModel):
     action_items: List[ActionItem] = Field(default_factory=list)
     model: Optional[str] = Field(None, description="Model that produced this result.")
     provider: Optional[str] = Field(
-        None, description="AI provider that produced this result: grok | gemini | groq."
+        None,
+        description="LLM provider that produced this result (groq). Meetings analysed "
+        "before the Groq-only change may name the provider used at the time.",
     )
     chunk_count: int = 1
     generated_at: Optional[datetime] = None

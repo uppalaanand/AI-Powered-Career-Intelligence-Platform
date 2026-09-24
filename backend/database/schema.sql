@@ -56,6 +56,19 @@ create table if not exists public.meetings (
 create index if not exists meetings_created_at_idx on public.meetings (created_at desc);
 create index if not exists meetings_status_idx     on public.meetings (status);
 
+-- Milestone 3 knowledge-index bookkeeping. Nullable and purely informational:
+-- the vectors themselves live in Pinecone, and everything here can be rebuilt
+-- from the tables below. Same statements as
+-- database/migrations/002_add_knowledge_index_columns.sql, and equally safe to
+-- re-run on an existing installation.
+alter table public.meetings
+    add column if not exists index_status          text,   -- NOT_INDEXED | INDEXING | INDEXED | FAILED
+    add column if not exists indexed_at            timestamptz,
+    add column if not exists index_error           text,
+    add column if not exists knowledge_fingerprint text;   -- unchanged hash = skip re-embedding
+
+create index if not exists meetings_index_status_idx on public.meetings (index_status);
+
 -- ------------------------------------------------------ transcript_segments
 create table if not exists public.transcript_segments (
     id             uuid primary key default gen_random_uuid(),

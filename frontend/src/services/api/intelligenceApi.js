@@ -1,10 +1,10 @@
 /**
  * Meeting intelligence endpoints.
  *
- * The backend picks the AI provider itself, trying Grok, then Gemini, then Groq
- * and stopping at the first valid answer; `intelligence.provider` says which one
- * responded. `analyze` without `force` returns an existing analysis untouched,
- * so re-opening a meeting never spends an API call.
+ * The backend analyses the transcript with Groq, its only LLM provider;
+ * `intelligence.provider` and `intelligence.model` say what produced the result.
+ * `analyze` without `force` returns an existing analysis untouched, so
+ * re-opening a meeting never spends a Groq request.
  */
 import { get, post } from './client';
 

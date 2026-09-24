@@ -89,7 +89,9 @@ class MeetingController:
         return await run_in_threadpool(self._service.rename, meeting_id, title)
 
     async def delete(self, meeting_id: str) -> None:
-        await run_in_threadpool(self._service.delete, meeting_id)
+        # Deletes the meeting and its search vectors together, so the knowledge
+        # index cannot keep pointing at a meeting that no longer exists.
+        await self._service.delete_with_knowledge(meeting_id)
 
     # -------------------------------------------------------------- exports
     async def export(self, meeting_id: str, export_format: ExportFormat) -> tuple[str, str, str]:

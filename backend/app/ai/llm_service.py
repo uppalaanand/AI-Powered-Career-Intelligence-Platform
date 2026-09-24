@@ -1,37 +1,41 @@
-"""LLM analysis engine - transcript in, validated meeting intelligence out.
+"""LLM service - every language-model task in the application.
 
-One instance drives exactly *one* provider. Choosing between providers and
-falling back is the orchestrator's job (``app.ai.llm_orchestrator``); this file
-only knows how to turn a transcript into validated intelligence using whichever
-provider it was handed:
+The single entry point for LLM work. Everything goes through here, and from here
+through :class:`~app.ai.groq_client.GroqClient` - the only file that talks to
+Groq, the application's only LLM provider:
 
-    prepare prompt -> call provider -> parse JSON -> validate against Pydantic
-    -> retry on malformed output -> chunk long transcripts -> aggregate
+    Milestone 2  analyze_transcript()   transcript -> validated meeting intelligence
+    Milestone 3  generate_validated()   RAG prompt -> validated grounded answer
 
-Two aggregation modes:
+Both share one request-and-validate loop, so they get the same guarantees:
+parse the JSON, validate it against a Pydantic model, correct the model once if
+the reply is malformed, and never let unvalidated output reach the caller.
 
-* <= one chunk : single pass.
+Meeting analysis has two aggregation modes:
+
+* <= one chunk : single pass - ONE request produces the summary, key points,
+  decisions, participants and action items (with owners, deadlines,
+  priorities and statuses) together. Nothing is requested field by field.
 * > one chunk  : map/reduce. Each chunk is analysed, then the partial results
   are merged. The merge is attempted by the model first (it writes a better
-  connected summary); if that call fails or returns junk, a deterministic local
-  merge takes over so a long meeting still produces a usable result.
+  connected summary) when the merge prompt fits the token budget; otherwise, or
+  if that call fails, a deterministic local merge takes over at no cost.
 """
 
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 
-from app.ai.chunking import ChunkPlan, plan_chunks
-from app.ai.providers import LLMProvider, ProviderCategory, category_of
-from app.ai.providers.grok_provider import GrokProvider
+from app.ai.chunking import ChunkPlan, estimate_tokens, plan_chunks
+from app.ai.groq_client import ErrorCategory, GroqClient, category_of
 from app.ai.prompts.meeting_intelligence_prompt import (
     SYSTEM_PROMPT,
     build_chunk_prompt,
     build_merge_prompt,
     build_single_pass_prompt,
 )
-from app.config import get_logger
+from app.config import get_logger, get_settings
 from app.models.enums import Priority
 from app.schemas.intelligence import ActionItem, LLMMeetingIntelligence
 from app.utils.errors import LLMInvalidResponseError
@@ -39,38 +43,43 @@ from app.utils.json_utils import dumps, extract_json_object
 from app.utils.text import collapse_whitespace, normalize_person_name, truncate
 
 logger = get_logger(__name__)
+T = TypeVar("T")
 
-# One extra attempt with a corrective instruction when JSON validation fails.
-# Override per instance (the orchestrator reads LLM_SCHEMA_RETRY_ATTEMPTS) to
-# spend the strict minimum of a free-tier quota.
-SCHEMA_RETRY_ATTEMPTS = 2
-# Chunks analysed at the same time. Small on purpose: friendlier to rate limits.
-CHUNK_CONCURRENCY = 3
-
-# A provider that fails this way is not going to answer the next chunk either.
-# Seeing one of these stops the engine from spending 39 more requests proving it.
+# A failure of this kind is not going to fix itself on the next chunk. Seeing
+# one stops the analysis from spending 39 more requests proving it.
 FATAL_CATEGORIES = {
-    ProviderCategory.NOT_CONFIGURED,
-    ProviderCategory.AUTH,
-    ProviderCategory.RATE_LIMIT,
-    ProviderCategory.MODEL_UNAVAILABLE,
-    ProviderCategory.NETWORK,
-    ProviderCategory.TIMEOUT,
-    ProviderCategory.SERVER_ERROR,
+    ErrorCategory.NOT_CONFIGURED,
+    ErrorCategory.AUTH,
+    ErrorCategory.RATE_LIMIT,
+    ErrorCategory.REQUEST_TOO_LARGE,
+    ErrorCategory.MODEL_UNAVAILABLE,
+    ErrorCategory.NETWORK,
+    ErrorCategory.TIMEOUT,
+    ErrorCategory.SERVER_ERROR,
 }
 
 
 class LLMService:
-    """Analysis engine bound to a single provider."""
+    """All LLM work, over one Groq client."""
 
     def __init__(
         self,
-        client: Optional[LLMProvider] = None,
+        client: Optional[GroqClient] = None,
         *,
         schema_retry_attempts: Optional[int] = None,
     ) -> None:
-        self._client = client or GrokProvider()
-        self._schema_attempts = max(1, schema_retry_attempts or SCHEMA_RETRY_ATTEMPTS)
+        settings = get_settings()
+        self._client = client or GroqClient()
+        attempts = (
+            schema_retry_attempts
+            if schema_retry_attempts is not None
+            else settings.llm_schema_retry_attempts
+        )
+        self._schema_attempts = max(1, attempts)
+        self._chunk_concurrency = max(1, settings.llm_chunk_concurrency)
+        self._max_output_tokens = settings.llm_max_output_tokens
+        self._chunk_max_output_tokens = settings.llm_chunk_max_output_tokens
+        self._max_request_tokens = settings.llm_max_request_tokens
 
     @property
     def model(self) -> str:
@@ -78,11 +87,11 @@ class LLMService:
 
     @property
     def provider_name(self) -> str:
-        return getattr(self._client, "name", "grok")
+        return getattr(self._client, "name", "groq")
 
     @property
     def provider_label(self) -> str:
-        return getattr(self._client, "label", "Grok (xAI)")
+        return getattr(self._client, "label", "Groq")
 
     @property
     def is_configured(self) -> bool:
@@ -112,7 +121,7 @@ class LLMService:
 
         if plan.count <= 1:
             prompt = build_single_pass_prompt(plan.chunks[0].text, meeting_title)
-            result = await self._request_validated(prompt, max_tokens=4000)
+            result = await self._request_validated(prompt, max_tokens=self._max_output_tokens)
             return result, metadata
 
         logger.info(
@@ -122,17 +131,17 @@ class LLMService:
         partials, fatal = await self._analyze_chunks(plan, meeting_title)
 
         if not partials:
-            # Nothing usable. Surface the provider's own failure when there was
-            # one, so the orchestrator can classify it and fall back correctly.
+            # Nothing usable. Surface Groq's own failure when there was one, so
+            # the caller sees the real reason (bad key, quota) not a generic one.
             raise fatal or LLMInvalidResponseError(
                 "None of the transcript sections could be analysed. Try again in a moment."
             )
 
         metadata["successful_chunks"] = len(partials)
         if fatal is not None:
-            # The provider died part-way. Keep the sections that did come back
-            # rather than re-running the whole meeting on another provider's
-            # quota, and tell the caller the result is incomplete.
+            # Groq stopped part-way (quota, outage). Keep the sections that did
+            # come back rather than re-running the whole meeting, and tell the
+            # caller the result is incomplete.
             metadata["partial"] = True
             metadata["degraded_reason"] = category_of(fatal)
             logger.warning(
@@ -153,13 +162,16 @@ class LLMService:
     ) -> Tuple[List[LLMMeetingIntelligence], Optional[Exception]]:
         """Analyse every chunk, tolerating individual failures.
 
-        Returns the sections that succeeded plus the first *fatal* provider
-        error, if one occurred. A fatal error (bad key, quota gone, model
-        missing, provider unreachable) stops any chunk that has not started:
-        the answer will not improve, and each further request is a free-tier
-        call spent on a provider that is already broken.
+        Returns the sections that succeeded plus the first *fatal* error, if
+        one occurred. A fatal error (bad key, quota gone, model missing, Groq
+        unreachable) stops any chunk that has not started: the answer will not
+        improve, and each further request would be quota spent for nothing.
+
+        Chunks run ``LLM_CHUNK_CONCURRENCY`` at a time (default 1) because a
+        free Groq plan limits tokens per minute; parallel chunks would mostly
+        buy 429s.
         """
-        semaphore = asyncio.Semaphore(CHUNK_CONCURRENCY)
+        semaphore = asyncio.Semaphore(self._chunk_concurrency)
         abort = asyncio.Event()
         fatal: Optional[Exception] = None
 
@@ -172,14 +184,16 @@ class LLMService:
                     return None
                 prompt = build_chunk_prompt(chunk_text, index, plan.count, meeting_title)
                 try:
-                    return await self._request_validated(prompt, max_tokens=3000)
+                    return await self._request_validated(
+                        prompt, max_tokens=self._chunk_max_output_tokens
+                    )
                 except Exception as exc:  # noqa: BLE001
                     if category_of(exc) in FATAL_CATEGORIES:
                         if fatal is None:
                             fatal = exc
                         abort.set()
                         logger.error(
-                            "Chunk %s/%s hit a fatal %s failure (%s); stopping this provider.",
+                            "Chunk %s/%s hit a fatal %s failure (%s); stopping the analysis.",
                             index + 1, plan.count, self.provider_label, category_of(exc),
                         )
                         return None
@@ -197,9 +211,21 @@ class LLMService:
         self, partials: List[LLMMeetingIntelligence], meeting_title: str
     ) -> LLMMeetingIntelligence:
         payloads = [dumps(part.model_dump(mode="json")) for part in partials]
+        prompt = build_merge_prompt(payloads, meeting_title)
+
+        # A merge prompt that cannot fit the plan's per-request token budget
+        # would only earn a 413. Merge locally instead - free and deterministic.
+        requested = estimate_tokens(SYSTEM_PROMPT + prompt) + self._max_output_tokens
+        if requested > self._max_request_tokens:
+            logger.info(
+                "Merge prompt (~%s tokens incl. output) exceeds LLM_MAX_REQUEST_TOKENS=%s; "
+                "merging %s sections locally without a Groq request.",
+                requested, self._max_request_tokens, len(partials),
+            )
+            return self._local_merge(partials)
+
         try:
-            prompt = build_merge_prompt(payloads, meeting_title)
-            merged = await self._request_validated(prompt, max_tokens=4000)
+            merged = await self._request_validated(prompt, max_tokens=self._max_output_tokens)
             if merged.summary:
                 # Union the lists: the merge model may drop an item, and losing a
                 # real action item is worse than an occasional near-duplicate.
@@ -245,35 +271,61 @@ class LLMService:
         )
 
     # ------------------------------------------------- request + validation
-    async def _request_validated(self, prompt: str, *, max_tokens: int) -> LLMMeetingIntelligence:
-        """Call the model and validate the reply, correcting once on failure."""
+    async def generate_validated(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        validate: Callable[[Dict[str, Any]], T],
+        max_tokens: int,
+        purpose: str = "LLM request",
+    ) -> Tuple[T, Dict[str, Any]]:
+        """Send one prompt to Groq and return a *validated* result.
+
+        The shared engine behind meeting analysis and RAG answers::
+
+            request -> parse JSON -> validate -> result
+                           |             |
+                           +-- fails ----+--> one corrective re-prompt
+                                              (LLM_SCHEMA_RETRY_ATTEMPTS)
+
+        Output that still fails validation raises ``LLMInvalidResponseError``,
+        so a malformed answer never reaches an API response or the database.
+        """
         last_error: Optional[str] = None
-        current_prompt = prompt
+        current_prompt = user_prompt
 
         for attempt in range(1, self._schema_attempts + 1):
             raw = await self._client.complete_json(
-                system_prompt=SYSTEM_PROMPT, user_prompt=current_prompt, max_tokens=max_tokens
+                system_prompt=system_prompt, user_prompt=current_prompt, max_tokens=max_tokens
             )
             parsed = extract_json_object(raw)
 
             if parsed is None:
                 last_error = "the reply was not valid JSON"
                 logger.warning(
-                    "Attempt %s: unparseable JSON. First 200 chars: %s",
-                    attempt, truncate(raw, 200),
+                    "%s attempt %s: unparseable JSON. First 200 chars: %s",
+                    purpose, attempt, truncate(raw, 200),
                 )
             elif not isinstance(parsed, dict):
                 last_error = "the reply was not a JSON object"
             else:
                 try:
-                    return LLMMeetingIntelligence.model_validate(parsed)
+                    result = validate(parsed)
+                    return result, {
+                        "provider": self.provider_name,
+                        "provider_label": self.provider_label,
+                        "model": self.model,
+                    }
                 except Exception as exc:  # noqa: BLE001 - pydantic ValidationError
                     last_error = str(exc)[:400]
-                    logger.warning("Attempt %s: schema validation failed: %s", attempt, last_error)
+                    logger.warning(
+                        "%s attempt %s: schema validation failed: %s", purpose, attempt, last_error
+                    )
 
             if attempt < self._schema_attempts:
                 current_prompt = (
-                    f"{prompt}\n\nYour previous reply could not be used because "
+                    f"{user_prompt}\n\nYour previous reply could not be used because "
                     f"{last_error}. Return ONLY a valid JSON object matching the schema "
                     "exactly, with no markdown fences and no commentary."
                 )
@@ -283,10 +335,21 @@ class LLMService:
             f"format after {self._schema_attempts} attempt(s).",
             details={
                 "provider": self.provider_name,
-                "category": ProviderCategory.INVALID_RESPONSE,
+                "category": ErrorCategory.INVALID_RESPONSE,
                 "reason": last_error,
             },
         )
+
+    async def _request_validated(self, prompt: str, *, max_tokens: int) -> LLMMeetingIntelligence:
+        """Meeting-analysis request: the shared loop with the intelligence schema."""
+        result, _ = await self.generate_validated(
+            system_prompt=SYSTEM_PROMPT,
+            user_prompt=prompt,
+            validate=LLMMeetingIntelligence.model_validate,
+            max_tokens=max_tokens,
+            purpose="Meeting analysis",
+        )
+        return result
 
 
 # --------------------------------------------------------------- de-duping

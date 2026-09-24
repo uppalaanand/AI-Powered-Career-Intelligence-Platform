@@ -18,7 +18,7 @@ def get_controller() -> HealthController:
     "/health",
     summary="Service health and configuration",
     description=(
-        "Reports whether FFmpeg, the AI providers and Supabase are configured, and lists any warnings "
+        "Reports whether FFmpeg, Groq, meeting search and Supabase are configured, and lists any warnings "
         "the operator should fix. Pass `deep=true` to also ping the database."
     ),
 )
@@ -59,20 +59,27 @@ async def database_health(controller: HealthController = Depends(get_controller)
 
 
 @router.get(
-    "/health/llm",
-    summary="Check the AI provider chain",
+    "/health/vector",
+    summary="Check the meeting search stack (Milestone 3)",
     description=(
-        "Reports the configured fallback chain (Grok -> Gemini -> Groq) and makes one "
-        "tiny live call to the **primary configured provider** to prove its key and "
-        "model work. The others are reported from configuration only.\n\n"
-        "Pass `all=true` to live-check every configured provider - that costs one "
-        "request per provider, so it is off by default on free tiers."
+        "Verifies the two services semantic search depends on: the embedding "
+        "model and the Pinecone index.\n\n"
+        "Reports the index dimension against the configured embedding size, which "
+        "is the mistake that otherwise only shows up as a rejected upsert."
     ),
 )
-async def llm_health(
-    all: bool = Query(
-        False, description="Live-check every configured provider, not just the primary."
+async def vector_health(controller: HealthController = Depends(get_controller)):
+    return success_payload(await controller.check_vector_store(), "Search check complete.")
+
+
+@router.get(
+    "/health/llm",
+    summary="Check the Groq connection",
+    description=(
+        "Makes one tiny live call to Groq - the application's only LLM provider - to "
+        "prove GROQ_API_KEY and GROQ_MODEL work. Operator-triggered only: nothing in "
+        "the analysis or search path calls this."
     ),
-    controller: HealthController = Depends(get_controller),
-):
-    return success_payload(await controller.check_llm(check_all=all), "LLM check complete.")
+)
+async def llm_health(controller: HealthController = Depends(get_controller)):
+    return success_payload(await controller.check_llm(), "LLM check complete.")

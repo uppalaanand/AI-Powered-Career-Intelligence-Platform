@@ -64,7 +64,8 @@ const INTELLIGENCE = {
       context: null,
     },
   ],
-  model: 'grok-4-fast',
+  model: 'openai/gpt-oss-20b',
+  provider: 'groq',
   chunk_count: 1,
 };
 
@@ -89,7 +90,9 @@ function mockBackend() {
           ffmpeg_available: true,
           whisper_backend: 'faster-whisper',
           whisper_model: 'base',
-          grok_configured: true,
+          groq_configured: true,
+          llm_configured: true,
+          llm_provider: 'groq',
           supabase_configured: true,
           warnings: [],
         });

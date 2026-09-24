@@ -34,10 +34,13 @@ it with Whisper, validate the transcript, store it, and measure accuracy against
 reference transcript using Word Error Rate.
 
 **Milestone 2 - LLM processing**
-Send the transcript to the AI provider chain - Grok (xAI) first, then Google Gemini,
-then Groq, stopping at the first valid answer - validate the structured JSON it returns
-against a strict schema, map participants, extract action items with deadlines and
-priorities, and persist everything to Supabase.
+Send the transcript to Groq, the only LLM provider, validate the structured JSON it
+returns against a strict schema, map participants, extract action items with deadlines
+and priorities, and persist everything to Supabase.
+
+**Milestone 3 - knowledge search and RAG**
+Turn stored meetings into local embeddings, index them in Pinecone, search them by
+meaning, and answer questions from the retrieved meeting records with Groq.
 
 Every response uses the same envelope:
 
@@ -69,14 +72,15 @@ async def lifespan(app: FastAPI):
             "in backend/.env and run backend/database/schema.sql."
         )
     if settings.llm_configured:
-        logger.info(
-            "AI provider chain: %s", " -> ".join(settings.configured_llm_providers)
-        )
+        logger.info("LLM: Groq (model=%s)", settings.groq_model)
     else:
         logger.warning(
-            "No AI provider is configured. Set XAI_API_KEY (Grok), GEMINI_API_KEY "
-            "or GROQ_API_KEY in backend/.env. Transcription still works."
+            "Groq is not configured. Set GROQ_API_KEY in backend/.env. "
+            "Transcription still works; analysis and Q&A do not."
         )
+
+    if settings.knowledge_configured and settings.embedding_preload:
+        _preload_embedding_model()
 
     logger.info(
         "Whisper: %s / model '%s' on %s | CORS: %s",
@@ -84,7 +88,32 @@ async def lifespan(app: FastAPI):
         ", ".join(settings.cors_origin_list),
     )
     yield
+    from app.utils.http import close_shared_client
+
+    await close_shared_client()
     logger.info("Shutting down")
+
+
+def _preload_embedding_model() -> None:
+    """Load the local embedding model in the background.
+
+    The first run downloads it (~67 MB); later starts read it from the cache.
+    Doing that in a daemon thread keeps startup instant while making sure the
+    first search does not pay for the load. A failure is only logged: search
+    will retry the load, and nothing else depends on it.
+    """
+    import threading
+
+    def warm() -> None:
+        try:
+            from app.services.embedding_service import EmbeddingService
+
+            EmbeddingService().preload()
+        except Exception as exc:  # noqa: BLE001 - background warm-up must never crash
+            logger.warning("Embedding model preload failed (search will retry): %s",
+                           getattr(exc, "message", exc))
+
+    threading.Thread(target=warm, name="embedding-preload", daemon=True).start()
 
 
 def create_app() -> FastAPI:

@@ -1,15 +1,10 @@
-from app.ai.llm_client import GrokClient
-from app.ai.llm_orchestrator import LLMOrchestrator, build_default_providers
-from app.ai.llm_service import LLMService
-from app.ai.providers import GeminiProvider, GrokProvider, GroqProvider, LLMProvider
+"""LLM layer. Groq is the only provider.
 
-__all__ = [
-    "GeminiProvider",
-    "GrokClient",
-    "GrokProvider",
-    "GroqProvider",
-    "LLMOrchestrator",
-    "LLMProvider",
-    "LLMService",
-    "build_default_providers",
-]
+    LLMService  - every LLM task (meeting analysis, RAG answers)
+    GroqClient  - the only code that talks to the Groq API
+"""
+
+from app.ai.groq_client import GroqClient
+from app.ai.llm_service import LLMService
+
+__all__ = ["GroqClient", "LLMService"]

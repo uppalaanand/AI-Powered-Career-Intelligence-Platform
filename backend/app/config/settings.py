@@ -61,42 +61,91 @@ class Settings(BaseSettings):
     whisper_beam_size: int = 5
     whisper_vad_filter: bool = True
 
-    # ------------------------------------------------ LLM provider fallback
-    # Primary first. Unconfigured providers are skipped, not called.
-    llm_provider_order: str = "grok,gemini,groq"
-    # Requests one provider may spend on a single prompt. 2 = one call plus one
-    # controlled retry, and only for transient failures (network / timeout /
-    # 5xx). Auth, quota and model errors never retry - the chain moves on.
-    llm_provider_max_attempts: int = 2
-    # Corrective re-prompts when a provider returns unusable JSON. 2 = one call
-    # plus one correction; set to 1 to spend the strict minimum of quota.
-    llm_schema_retry_attempts: int = 2
-    llm_temperature: float = 0.1
-
-    # ----------------------------------------------------------- grok /xai
-    xai_api_key: Optional[str] = None
-    xai_model: str = "grok-4-fast"
-    xai_base_url: str = "https://api.x.ai/v1"
-    xai_timeout_seconds: int = 120
-    xai_max_retries: int = 3          # legacy; capped by llm_provider_max_attempts
-    xai_temperature: float = 0.1
-
-    # -------------------------------------------------------- google gemini
-    gemini_api_key: Optional[str] = None
-    gemini_model: str = "gemini-2.0-flash"
-    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
-    gemini_timeout_seconds: int = 120
-
-    # ------------------------------------------------------------ groq
+    # -------------------------------------------------------- groq (the LLM)
+    # Groq is the application's only LLM provider: meeting analysis and RAG
+    # answers both go through app/ai/groq_client.py. There is no fallback.
     groq_api_key: Optional[str] = None
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "openai/gpt-oss-20b"
     groq_base_url: str = "https://api.groq.com/openai/v1"
-    groq_timeout_seconds: int = 120
+    groq_timeout_seconds: int = 60
+    # Requests one prompt may spend on transient failures (network, 5xx).
+    # 1 = never retry. Auth, model and quota errors are never retried.
+    groq_max_attempts: int = 2
+    groq_temperature: float = 0.1
+    # Only sent to reasoning models (openai/gpt-oss-*, qwen/qwen3-*). "low"
+    # keeps reasoning tokens - which count against the output budget and the
+    # plan's token quota - to a minimum. Blank = never send it.
+    groq_reasoning_effort: Optional[Literal["low", "medium", "high"]] = "low"
+    # On a 429, wait and retry once only if Groq asks for at most this long. A
+    # longer wait means a daily quota is exhausted, so the request fails fast.
+    groq_max_rate_limit_wait_seconds: float = 20.0
+
+    # ------------------------------------------------- LLM request shaping
+    # Corrective re-prompts when a reply is not valid JSON. 2 = one call plus
+    # one correction; 1 = the strict minimum of quota.
+    llm_schema_retry_attempts: int = 2
+    # Chunks of a long transcript analysed at once. 1 suits a free Groq plan's
+    # tokens-per-minute limit; raise it on a paid plan for faster long meetings.
+    llm_chunk_concurrency: int = 1
+    llm_max_output_tokens: int = 3000         # single-pass analysis and merge
+    llm_chunk_max_output_tokens: int = 2000   # each chunk of a long transcript
+    # Prompt + output budget for one request. A chunk-merge prompt that would
+    # exceed it is merged locally instead of being sent to fail with a 413.
+    llm_max_request_tokens: int = 7000
 
     # ------------------------------------------------------------ chunking
     llm_chunk_char_size: int = 9000
     llm_chunk_overlap_chars: int = 600
     llm_max_chunks: int = 40
+
+    # ------------------------------------------- milestone 3: embeddings
+    # Embeddings are computed LOCALLY with fastembed (ONNX Runtime, no
+    # PyTorch): free, no API key, no quota, no network call per search. Groq
+    # is an LLM provider and does not produce embeddings. The same model embeds
+    # stored passages and search queries, so they share one vector space.
+    embedding_provider: str = "fastembed"
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    # MUST equal the model's output size AND the Pinecone index dimension.
+    # Checked when the model loads and before every upsert.
+    embedding_dimensions: int = 384
+    embedding_batch_size: int = 32
+    # Where the model files (~67 MB) are cached. Blank = the OS temp directory,
+    # which many hosts wipe on restart; set a persistent path in production.
+    embedding_cache_dir: Optional[str] = None
+    embedding_threads: Optional[int] = None
+    # Load the model in the background at startup, so the first search does
+    # not pay for it. Only happens when meeting search is configured.
+    embedding_preload: bool = True
+
+    # Knowledge chunks are far smaller than analysis chunks: retrieval wants a
+    # precise passage, not a whole section of the meeting.
+    knowledge_chunk_char_size: int = 1200
+    knowledge_chunk_overlap_chars: int = 150
+    knowledge_max_chunks_per_meeting: int = 200
+    knowledge_max_backfill_meetings: int = 200
+
+    # ---------------------------------------- milestone 3: vector database
+    pinecone_api_key: Optional[str] = None
+    pinecone_index_name: str = "meeting-knowledge"
+    pinecone_namespace: str = "meetings"
+    pinecone_base_url: str = "https://api.pinecone.io"
+    pinecone_index_host: Optional[str] = None   # cached; looked up when blank
+    pinecone_timeout_seconds: int = 30
+    pinecone_max_attempts: int = 2
+    pinecone_cloud: str = "aws"
+    pinecone_region: str = "us-east-1"
+    pinecone_create_index_if_missing: bool = True
+
+    # ------------------------------------ milestone 3: search / retrieval
+    search_default_top_k: int = 8
+    search_max_top_k: int = 50
+    search_min_score: float = 0.0
+    rag_top_k: int = 12
+    rag_max_context_chars: int = 12000
+    rag_max_meetings_in_context: int = 6
+    # Index a meeting automatically once its AI analysis succeeds. Failure here
+    # never fails the analysis - the meeting stays indexable on demand.
+    knowledge_auto_index: bool = True
 
     # ------------------------------------------------------------ supabase
     supabase_url: Optional[str] = None
@@ -108,14 +157,24 @@ class Settings(BaseSettings):
     request_id_header: str = "X-Request-ID"
 
     # ---------------------------------------------------------- validators
-    @field_validator("whisper_language", "temp_dir", "xai_api_key", "gemini_api_key",
-                     "groq_api_key", "supabase_url", "supabase_service_role_key",
+    @field_validator("whisper_language", "temp_dir", "groq_api_key", "groq_reasoning_effort",
+                     "embedding_cache_dir", "embedding_threads", "pinecone_api_key",
+                     "pinecone_index_host", "supabase_url", "supabase_service_role_key",
                      mode="before")
     @classmethod
     def _blank_to_none(cls, value: object) -> object:
-        """Treat `KEY=` in a .env file as "not configured" rather than "empty string"."""
-        if isinstance(value, str) and not value.strip():
-            return None
+        """Treat `KEY=` in a .env file as "not configured" rather than "empty string".
+
+        Also treats `KEY=    # some comment` as blank. python-dotenv only strips
+        an inline comment when whitespace comes right before the `#`, and the
+        spaces after `=` are consumed first - so for a blank value the comment
+        itself would otherwise become the value (a Pinecone host of
+        "# blank = ...", or a temp directory literally named "# blank = ...").
+        """
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped or stripped.startswith("#"):
+                return None
         return value
 
     @field_validator("log_level", mode="before")
@@ -150,46 +209,30 @@ class Settings(BaseSettings):
         return bool(self.supabase_url and self.supabase_service_role_key)
 
     @property
-    def grok_configured(self) -> bool:
-        return bool(self.xai_api_key)
-
-    @property
-    def gemini_configured(self) -> bool:
-        return bool(self.gemini_api_key)
-
-    @property
     def groq_configured(self) -> bool:
         return bool(self.groq_api_key)
 
     @property
-    def llm_provider_names(self) -> List[str]:
-        """Fallback order, de-duplicated, unknown names dropped.
-
-        Defaults to the documented ``grok -> gemini -> groq`` chain if the
-        environment sets something unusable.
-        """
-        known = ("grok", "gemini", "groq")
-        seen: List[str] = []
-        for raw in self.llm_provider_order.split(","):
-            name = raw.strip().lower()
-            if name in known and name not in seen:
-                seen.append(name)
-        return seen or list(known)
-
-    @property
-    def configured_llm_providers(self) -> List[str]:
-        """Providers that have a key, in fallback order. Never calls anything."""
-        available = {
-            "grok": self.grok_configured,
-            "gemini": self.gemini_configured,
-            "groq": self.groq_configured,
-        }
-        return [name for name in self.llm_provider_names if available[name]]
-
-    @property
     def llm_configured(self) -> bool:
-        """True when at least one AI provider can be tried."""
-        return bool(self.configured_llm_providers)
+        """True when Groq, the only LLM provider, has a key."""
+        return self.groq_configured
+
+    # -------------------------------------------- milestone 3 derived props
+    @property
+    def embeddings_configured(self) -> bool:
+        """The local embedding library is installed. No key is involved."""
+        from importlib.util import find_spec
+
+        return self.embedding_provider == "fastembed" and find_spec("fastembed") is not None
+
+    @property
+    def vector_db_configured(self) -> bool:
+        return bool(self.pinecone_api_key)
+
+    @property
+    def knowledge_configured(self) -> bool:
+        """Milestone 3 needs the embedding model, Pinecone and the database."""
+        return self.embeddings_configured and self.vector_db_configured and self.supabase_configured
 
 
 @lru_cache(maxsize=1)

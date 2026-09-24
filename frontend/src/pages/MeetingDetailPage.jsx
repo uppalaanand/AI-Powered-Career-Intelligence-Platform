@@ -278,14 +278,18 @@ function TranscriptSection({ meeting, transcript, busy, onTranscribe }) {
   );
 }
 
-/** Display names for the AI providers the backend can fall back through. */
-const PROVIDER_LABELS = { grok: 'Grok', gemini: 'Gemini', groq: 'Groq' };
+/**
+ * Display names for stored `provider` values. New analyses are always Groq;
+ * the other names only appear on meetings analysed before the Groq-only change,
+ * and are kept so those historical records still display correctly.
+ */
+const PROVIDER_LABELS = { groq: 'Groq', grok: 'Grok', gemini: 'Gemini' };
 
 /**
- * "Gemini (gemini-2.0-flash)" - which provider actually answered.
+ * "Groq (openai/gpt-oss-20b)" - which provider and model produced the result.
  *
- * `provider` is absent on results analysed before the fallback chain existed,
- * so the model name alone is still a valid answer.
+ * `provider` is absent on the oldest results, so the model name alone is still
+ * a valid answer.
  */
 function describeProvider({ provider, model }) {
   const name = PROVIDER_LABELS[provider] || provider;
