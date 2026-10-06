@@ -5,3 +5,4 @@ export { knowledgeApi } from './knowledgeApi';
 export { meetingApi } from './meetingApi';
 export { systemApi } from './systemApi';
 export { transcriptionApi } from './transcriptionApi';
+export { integrationApi } from './integrationApi';

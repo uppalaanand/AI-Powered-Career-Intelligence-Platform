@@ -950,9 +950,19 @@ tbody tr:hover { background: #fafcfc; }
   gap: 16px;
 }
 
+.grid-4 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+}
+
 .text-muted { color: var(--ink-muted); }
 .text-sm { font-size: 0.87rem; }
 .text-xs { font-size: 0.79rem; }
+.capitalize { text-transform: capitalize; }
+.font-medium { font-weight: 500; }
+.text-success { color: var(--success); }
+.text-warn { color: var(--warn); }
 
 /* ============================= responsive =============================== */
 @media (max-width: 900px) {

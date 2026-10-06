@@ -1,5 +1,5 @@
 /** Meeting endpoints: upload, list, read, rename, delete. */
-import { del, get, patch, uploadWithProgress } from './client';
+import { del, get, patch, uploadWithProgress, downloadFile } from './client';
 
 export const meetingApi = {
   upload(file, { title, onProgress } = {}) {
@@ -29,5 +29,13 @@ export const meetingApi = {
 
   remove(meetingId) {
     return del(`/api/meetings/${meetingId}`);
+  },
+
+  getAnalytics(meetingId) {
+    return get(`/api/meetings/${meetingId}/analytics`);
+  },
+
+  downloadReport(meetingId, format = 'pdf') {
+    return downloadFile(`/api/meetings/${meetingId}/report?format=${format}`, `meeting-${meetingId}-report.${format}`);
   },
 };

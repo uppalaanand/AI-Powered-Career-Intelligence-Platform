@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { meetingApi } from '../services/api';
 
 /** Meeting list for the meetings screen. */
-export function useMeetings({ status } = {}) {
+export function useMeetings({ status, limit = 50, offset = 0 } = {}) {
   const [meetings, setMeetings] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -12,7 +12,7 @@ export function useMeetings({ status } = {}) {
     setLoading(true);
     setError(null);
     try {
-      const data = await meetingApi.list({ status, limit: 100 });
+      const data = await meetingApi.list({ status, limit, offset });
       setMeetings(data?.meetings || []);
       setTotal(data?.total || 0);
     } catch (caught) {
@@ -20,7 +20,7 @@ export function useMeetings({ status } = {}) {
     } finally {
       setLoading(false);
     }
-  }, [status]);
+  }, [status, limit, offset]);
 
   useEffect(() => {
     load();

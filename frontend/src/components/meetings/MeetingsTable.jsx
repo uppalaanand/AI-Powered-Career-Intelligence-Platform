@@ -15,6 +15,7 @@ export function MeetingsTable({ meetings }) {
             <th scope="col">Length</th>
             <th scope="col">Status</th>
             <th scope="col">Results</th>
+            <th scope="col">Index</th>
             <th scope="col">Uploaded</th>
           </tr>
         </thead>
@@ -50,6 +51,17 @@ export function MeetingsTable({ meetings }) {
                   ]
                     .filter(Boolean)
                     .join(' + ') || <span className="cell-null">None yet</span>}
+                </td>
+                <td className="cell-muted text-sm">
+                  {meeting.index_status === 'indexed' ? (
+                    <span className="text-success">Indexed</span>
+                  ) : meeting.index_status === 'failed' ? (
+                    <span className="text-danger">Failed</span>
+                  ) : meeting.index_status === 'stale' ? (
+                    <span className="text-warn">Stale</span>
+                  ) : (
+                    <span className="cell-null">Not indexed</span>
+                  )}
                 </td>
                 <td className="cell-muted text-sm">{formatRelative(meeting.created_at)}</td>
               </tr>

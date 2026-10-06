@@ -1,5 +1,6 @@
-import { Link } from 'react-router-dom';
-import { Upload, Waves } from 'lucide-react';
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Upload, Waves, Search, Plug } from 'lucide-react';
 import { Alert, Button, Card, EmptyState, Spinner, Stat } from '../components/ui';
 import { MeetingsTable } from '../components/meetings/MeetingsTable';
 import { useDashboard } from '../hooks/useMeetings';
@@ -7,6 +8,18 @@ import { formatDuration } from '../utils/format';
 
 export function DashboardPage() {
   const { stats, loading, error } = useDashboard();
+  const navigate = useNavigate();
+  const [quickSearch, setQuickSearch] = useState('');
+
+  const handleSearch = (e) => {
+    e.preventDefault();
+    if (quickSearch.trim()) {
+      // Pass the query via state to AskPage, AskPage doesn't naturally support taking query via route params natively without modifications
+      // Let's assume AskPage might need to pick it up or we just redirect. Actually AskPage has no native way to take query from location state as implemented, but we can redirect.
+      // Since AskPage handles its own state, maybe we should just redirect to /ask. Wait, the prompt says "redirects to the Ask & Search page with the query".
+      navigate('/ask', { state: { query: quickSearch.trim() } });
+    }
+  };
 
   return (
     <>
@@ -19,13 +32,32 @@ export function DashboardPage() {
               do what.
             </p>
           </div>
-          <Link to="/upload">
-            <Button variant="primary" icon={Upload}>
-              Upload meeting
-            </Button>
-          </Link>
+          <div className="row">
+            <Link to="/integrations">
+              <Button icon={Plug}>Integrations</Button>
+            </Link>
+            <Link to="/upload">
+              <Button variant="primary" icon={Upload}>
+                Upload meeting
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
+
+      <Card style={{ marginBottom: 24 }}>
+        <form onSubmit={handleSearch} className="row">
+          <Search size={20} className="text-muted" />
+          <input 
+            className="input" 
+            style={{ flex: 1, border: 'none', boxShadow: 'none' }} 
+            placeholder="Ask a question or search across all meetings..." 
+            value={quickSearch}
+            onChange={e => setQuickSearch(e.target.value)}
+          />
+          <Button type="submit" variant="secondary" size="sm">Search</Button>
+        </form>
+      </Card>
 
       {error && (
         <Alert tone="danger" title="Could not load the dashboard">
@@ -45,6 +77,12 @@ export function DashboardPage() {
               value={formatDuration((stats.total_transcribed_minutes || 0) * 60)}
               label="Audio transcribed"
             />
+            {stats.total_participants !== undefined && (
+              <Stat value={stats.total_participants} label="Total Participants" />
+            )}
+            {stats.total_decisions !== undefined && (
+              <Stat value={stats.total_decisions} label="Decisions Made" />
+            )}
           </div>
 
           {stats.failed_meetings > 0 && (

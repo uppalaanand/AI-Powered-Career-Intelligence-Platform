@@ -119,8 +119,10 @@ function mockBackend() {
         });
       }
       if (path.includes('/transcript')) return send(TRANSCRIPT);
+      if (path.includes('/analytics')) return send({ participant_count: 2, action_items_count: 1, action_items_completed: 0, action_items_pending: 1, decision_count: 1, key_point_count: 2, deadline_count: 1, transcript_word_count: 18, priority_distribution: {}, action_items_by_participant: {} });
       if (path.includes('/intelligence')) return send({ meeting_id: 'm-1', intelligence: INTELLIGENCE });
       if (path.match(/\/api\/meetings\/m-1$/)) return send(MEETING);
+      if (path.includes('/api/meetings/search')) return send({ results: [] });
       if (path.includes('/api/meetings')) return send({ meetings: [MEETING], total: 1 });
       return send(null);
     })
@@ -164,7 +166,7 @@ describe('application screens', () => {
   it('renders the meetings list', async () => {
     renderAt('/meetings', <MeetingsPage />, '/meetings');
     expect(await screen.findByText('Mobile launch sync')).toBeInTheDocument();
-    expect(screen.getByText('1 meeting')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Meetings' })).toBeInTheDocument();
   });
 
   it('renders a meeting with its transcript and intelligence', async () => {

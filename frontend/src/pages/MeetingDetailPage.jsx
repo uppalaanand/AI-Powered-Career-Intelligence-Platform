@@ -20,9 +20,11 @@ import { ActionItemsTable } from '../components/intelligence/ActionItemsTable';
 import { ParticipantList } from '../components/intelligence/ParticipantList';
 import { PointList } from '../components/intelligence/PointList';
 import { DeadlineList } from '../components/intelligence/DeadlineList';
+import { AnalyticsPanel } from '../components/intelligence/AnalyticsPanel';
 import { intelligenceApi, meetingApi, transcriptionApi } from '../services/api';
 import { useToast } from '../hooks/useToast';
 import { formatBytes, formatDate, formatDuration } from '../utils/format';
+import { FileText, Download } from 'lucide-react';
 
 export function MeetingDetailPage() {
   const { meetingId } = useParams();
@@ -32,6 +34,7 @@ export function MeetingDetailPage() {
   const [meeting, setMeeting] = useState(null);
   const [transcript, setTranscript] = useState(null);
   const [intelligence, setIntelligence] = useState(null);
+  const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(null);
@@ -57,8 +60,11 @@ export function MeetingDetailPage() {
         try {
           const data = await intelligenceApi.get(meetingId);
           setIntelligence(data.intelligence);
+          const analyticsData = await meetingApi.getAnalytics(meetingId);
+          setAnalytics(analyticsData);
         } catch {
           setIntelligence(null);
+          setAnalytics(null);
         }
       }
     } catch (caught) {
@@ -134,8 +140,18 @@ export function MeetingDetailPage() {
   const tabs = [
     { id: 'transcript', label: 'Transcript' },
     { id: 'intelligence', label: 'Meeting intelligence' },
+    { id: 'analytics', label: 'Analytics' },
     { id: 'details', label: 'File details' },
   ];
+
+  const handleDownloadReport = async (format) => {
+    try {
+      await meetingApi.downloadReport(meetingId, format);
+      toast.success(`Report downloaded as ${format.toUpperCase()}`);
+    } catch (e) {
+      toast.error(e.displayMessage || 'Could not download report');
+    }
+  };
 
   return (
     <>
@@ -192,6 +208,14 @@ export function MeetingDetailPage() {
             </Button>
           </div>
         </div>
+        
+        {meeting.has_intelligence && (
+          <div className="row" style={{ marginTop: 16 }}>
+            <span className="text-sm font-medium">Download Report:</span>
+            <Button size="sm" icon={FileText} onClick={() => handleDownloadReport('pdf')}>PDF</Button>
+            <Button size="sm" icon={Download} onClick={() => handleDownloadReport('csv')}>CSV</Button>
+          </div>
+        )}
       </div>
 
       {meeting.error_message && (
@@ -220,6 +244,10 @@ export function MeetingDetailPage() {
           busy={busy === 'analyze'}
           onAnalyze={() => runAnalysis(false)}
         />
+      </TabPanel>
+
+      <TabPanel id="analytics" active={tab}>
+        <AnalyticsPanel analytics={analytics} />
       </TabPanel>
 
       <TabPanel id="details" active={tab}>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink, Outlet, Link } from 'react-router-dom';
-import { AudioLines, LayoutDashboard, ListVideo, Menu, Sparkles, Upload } from 'lucide-react';
+import { AudioLines, LayoutDashboard, ListVideo, Menu, Sparkles, Upload, Plug } from 'lucide-react';
 import { Badge } from '../components/ui';
 import { useSystemHealth } from '../hooks/useSystemHealth';
 
@@ -9,6 +9,7 @@ const NAV = [
   { to: '/upload', label: 'Upload meeting', icon: Upload },
   { to: '/meetings', label: 'Meetings', icon: ListVideo },
   { to: '/ask', label: 'Ask & search', icon: Sparkles },
+  { to: '/integrations', label: 'Integrations', icon: Plug },
 ];
 
 export function AppLayout() {
@@ -46,7 +47,7 @@ export function AppLayout() {
               Whisper {health.whisper_model} &middot; {health.whisper_backend}
             </div>
           )}
-          <div>Milestone 1 + 2 + 3</div>
+          <div>Milestone 1 + 2 + 3 + 4</div>
         </div>
       </aside>
 

@@ -7,6 +7,8 @@ import { MeetingDetailPage } from './pages/MeetingDetailPage';
 import { AskPage } from './pages/AskPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
+import { IntegrationsPage } from './pages/IntegrationsPage';
+
 export default function App() {
   return (
     <Routes>
@@ -16,6 +18,7 @@ export default function App() {
         <Route path="meetings" element={<MeetingsPage />} />
         <Route path="meetings/:meetingId" element={<MeetingDetailPage />} />
         <Route path="ask" element={<AskPage />} />
+        <Route path="integrations" element={<IntegrationsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

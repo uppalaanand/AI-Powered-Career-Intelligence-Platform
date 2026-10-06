@@ -39,6 +39,9 @@ pytest==8.3.4
 pytest-asyncio==0.25.0
 respx==0.21.1                     # httpx mocking: Groq + Pinecone, no real calls
 
+# --- PDF Generation ------------------------------------------------------
+reportlab==4.1.0
+
 # ---------------------------------------------------------------------------
 # OPTIONAL: reference OpenAI Whisper backend (WHISPER_BACKEND=openai).
 # Large download (PyTorch ~2 GB). Only install if you specifically need it.

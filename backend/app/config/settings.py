@@ -156,10 +156,22 @@ class Settings(BaseSettings):
     # --------------------------------------------------------------- misc
     request_id_header: str = "X-Request-ID"
 
+    # -------------------------------------------------------- integrations
+    zoom_client_id: Optional[str] = None
+    zoom_client_secret: Optional[str] = None
+    zoom_account_id: Optional[str] = None
+    zoom_redirect_uri: Optional[str] = None
+    
+    google_client_id: Optional[str] = None
+    google_client_secret: Optional[str] = None
+    google_redirect_uri: Optional[str] = None
+
     # ---------------------------------------------------------- validators
     @field_validator("whisper_language", "temp_dir", "groq_api_key", "groq_reasoning_effort",
                      "embedding_cache_dir", "embedding_threads", "pinecone_api_key",
                      "pinecone_index_host", "supabase_url", "supabase_service_role_key",
+                     "zoom_client_id", "zoom_client_secret", "zoom_account_id", "zoom_redirect_uri",
+                     "google_client_id", "google_client_secret", "google_redirect_uri",
                      mode="before")
     @classmethod
     def _blank_to_none(cls, value: object) -> object:
@@ -233,6 +245,15 @@ class Settings(BaseSettings):
     def knowledge_configured(self) -> bool:
         """Milestone 3 needs the embedding model, Pinecone and the database."""
         return self.embeddings_configured and self.vector_db_configured and self.supabase_configured
+
+    # ---------------------------------------------------- integrations props
+    @property
+    def zoom_configured(self) -> bool:
+        return bool(self.zoom_client_id and self.zoom_client_secret and self.zoom_account_id)
+
+    @property
+    def google_meet_configured(self) -> bool:
+        return bool(self.google_client_id and self.google_client_secret)
 
 
 @lru_cache(maxsize=1)

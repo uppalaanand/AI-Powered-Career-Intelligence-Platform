@@ -12,7 +12,7 @@
  * API quota.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Database, MessageSquareText, Search, Sparkles, Upload } from 'lucide-react';
 import {
   Alert,
@@ -50,7 +50,9 @@ const SOURCE_LABELS = {
 
 export function AskPage() {
   const toast = useToast();
-  const [tab, setTab] = useState('ask');
+  const location = useLocation();
+  const initialQuery = location.state?.query || '';
+  const [tab, setTab] = useState(initialQuery ? 'search' : 'ask');
   const [status, setStatus] = useState(null);
   const [statusError, setStatusError] = useState(null);
   const [indexing, setIndexing] = useState(false);
@@ -122,7 +124,7 @@ export function AskPage() {
               <AskPanel />
             </TabPanel>
             <TabPanel id="search" active={tab}>
-              <SearchPanel />
+              <SearchPanel initialQuery={initialQuery} />
             </TabPanel>
           </Card>
         </>
@@ -328,15 +330,21 @@ function SourceRow({ source }) {
 
 /* ----------------------------------------------------------------- search */
 
-function SearchPanel() {
-  const [query, setQuery] = useState('');
+function SearchPanel({ initialQuery }) {
+  const [query, setQuery] = useState(initialQuery || '');
   const [response, setResponse] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  const submit = async (event) => {
+  useEffect(() => {
+    if (initialQuery) {
+      submit(null, initialQuery);
+    }
+  }, [initialQuery]);
+
+  const submit = async (event, q = query) => {
     event?.preventDefault();
-    const trimmed = query.trim();
+    const trimmed = q.trim();
     if (!trimmed || busy) return;
 
     setBusy(true);
